@@ -4,11 +4,24 @@
 /* Classes */
 const Game = require('./game.js');
 const Player = require('./player.js');
+const Asteroid = require('./asteroid.js');
 
 /* Global variables */
 var canvas = document.getElementById('screen');
 var game = new Game(canvas, update, render);
 var player = new Player({x: canvas.width/2, y: canvas.height/2}, canvas);
+var asteroid = [];
+var level = 1;
+var lives = 3;
+var score = 0;
+var state = 'start';
+var explosion = new Audio();
+explosion.src = 'assets/explosion.wav';
+var bump = new Audio();
+bump.src = 'assets/bump.wav';
+var destory = new Audio();
+destory.src = 'assets/destory.wav';
+
 
 /**
  * @function masterLoop
@@ -22,6 +35,7 @@ var masterLoop = function(timestamp) {
 masterLoop(performance.now());
 
 
+
 /**
  * @function update
  * Updates the game state, moving
@@ -30,9 +44,88 @@ masterLoop(performance.now());
  * @param {DOMHighResTimeStamp} elapsedTime indicates
  * the number of milliseconds passed since the last frame.
  */
-function update(elapsedTime) {
-  player.update(elapsedTime);
+function update(elapsedTime) {  
   // TODO: Update the game objects
+  switch(state){
+	  case 'start':
+		createAstroids(elapsedTime);
+		state = 'idle';
+		break;
+	  case 'idle':
+		if(player.hasStarted(elapsedTime)) state = 'running';
+		break;
+	  case 'running':
+	    //update player movement/ bullets
+		player.update(elapsedTime, asteroid, canvas);
+  
+	    //update astroids
+	    for (i = asteroid.length; i > 0; i--) {
+			var temp = asteroid.shift();
+			temp.update(elapsedTime);
+			if(temp.getStatus(elapsedTime) == false) asteroid.push(temp);
+   	    }
+	  
+	    //check bullet-astroid collision
+		var bullets = player.getBullets(elapsedTime);
+		for(var i in bullets){
+			var currentBullet = bullets[i].getLocation(elapsedTime);
+			for(var j in asteroid){
+				var currentAsteroid = asteroid[j].getLocation();
+				//(x2-x1)^2 + (y1-y2)^2 <= (r1+r2)^2 is the formula used to check for collisions
+				if(Math.pow(currentAsteroid.x - currentBullet.x, 2) + Math.pow(currentBullet.y - currentAsteroid.y, 2) <= Math.pow(currentBullet.radius + currentAsteroid.radius, 2) && !bullets[i].getDestory(elapsedTime)){
+					var size = asteroid[j].getVelocity();
+					if(size.mass > 30) splitAsteroid(elapsedTime, asteroid[j]);
+					asteroid[j].destory(elapsedTime);
+					destory.play();
+					bullets[i].destory(elapsedTime);
+					score += Math.ceil(size.mass);
+				}
+			}
+		}
+		
+		//check asteroid-asteroid collision
+		for(var i = 0; i< asteroid.length;i++){
+			var currentAsteroidOne = asteroid[i].getLocation(elapsedTime);
+			for(var j = i; j<asteroid.length;j++){
+				var currentAsteroidTwo = asteroid[j].getLocation();
+				//(x2-x1)^2 + (y1-y2)^2 <= (r1+r2)^2 is the formula used to check for collisions
+				if(i != j && Math.pow(currentAsteroidTwo.x - currentAsteroidOne.x, 2) + Math.pow(currentAsteroidOne.y - currentAsteroidTwo.y, 2) <= Math.pow(currentAsteroidOne.radius + currentAsteroidTwo.radius, 2)){
+					if(currentAsteroidOne.x < currentAsteroidTwo.x){
+						if(currentAsteroidOne.y > currentAsteroidTwo.y) astroidCollisions(asteroid[i], asteroid[j], 1);
+						else astroidCollisions(asteroid[i], asteroid[j],-1);
+					}
+					else{
+						if(currentAsteroidOne.y > currentAsteroidTwo.y) astroidCollisions(asteroid[i], asteroid[j], -1);
+						else astroidCollisions(asteroid[i], asteroid[j], 1);
+					}
+					bump.play();
+				}
+			}
+		}
+		
+		//check for win
+		if(asteroid.length == 0) state = 'win';
+		
+		
+		break;
+	  case 'win':
+		player = new Player({x: canvas.width/2, y: canvas.height/2}, canvas);
+		level++;
+		score += 100*level*lives;
+		state = 'start';
+		break;
+	  case 'lose':
+		player = new Player({x: canvas.width/2, y: canvas.height/2}, canvas);
+		lives--;
+		if(lives <= 0){
+			level = 1;
+			asteroid = [];
+			lives = 3;
+			score = 0;
+		}
+		state = 'start';
+		break;
+  }//end switch
 }
 
 /**
@@ -43,12 +136,308 @@ function update(elapsedTime) {
   * @param {CanvasRenderingContext2D} ctx the context to render to
   */
 function render(elapsedTime, ctx) {
+  //draws background
   ctx.fillStyle = "black";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  //draws players and his bullets
   player.render(elapsedTime, ctx);
+  //draws asteroids
+  for (i = 0; i < asteroid.length; i++) {
+	asteroid[i].render(elapsedTime, ctx);
+  }
+  //draw ui text
+  ctx.fillStyle = "white";
+  ctx.font = "20px Arial";
+  ctx.fillText("Level: " + level, 665, 475);
+  ctx.fillText("Score: " + score, 330, 475)
+  ctx.fillText("Lives: ", 15, 475);
+  //draw lives
+  ctx.strokeStyle = 'white';
+  for(var i = 0; i< lives;i++){
+	  ctx.beginPath();
+	  ctx.moveTo(85+(i*25), 455);
+	  ctx.lineTo(75+(i*25), 475);
+	  ctx.lineTo(85+(i*25), 465);
+	  ctx.lineTo(95+(i*25), 475);
+	  ctx.closePath();
+	  ctx.stroke();
+  }
+  //draws state specific ui
+  switch(state){
+	  case 'idle':
+		if(level == 1){
+			ctx.fillStyle = "white";
+			ctx.font = "bold 100px Arial";
+			ctx.fillText("ASTEROIDS", 90, 200);
+		}
+		else{
+			if(level>9){
+				ctx.fillStyle = "white";
+				ctx.font = "bold 100px Arial";
+				ctx.fillText("LEVEL " + (level), 170, 200);
+			}
+			else{
+				ctx.fillStyle = "white";
+				ctx.font = "bold 100px Arial";
+				ctx.fillText("LEVEL " + level, 190, 200);
+			}
+		}
+		ctx.fillStyle = "white";
+		ctx.font = "30px Arial";
+		ctx.fillText("Press any key to start!", 240, 400);
+		break;
+  }//end switch
 }
 
-},{"./game.js":2,"./player.js":3}],2:[function(require,module,exports){
+function getRandomNumber(min, max) {
+    return Math.random() * (max - min) + min;
+}
+
+function createAstroids(elapsedTime){
+	for(i = 0; i < level+9; i++){
+		var count = 0; //used to stop infinite loop if there are no spots for asteroids to fit
+		do{
+			var cont = false;
+			var x;
+			var y;
+			do{
+				x = getRandomNumber(0, canvas.width);
+				y = getRandomNumber(0, canvas.height);
+			}while(x > canvas.width/2 - 130 && x < canvas.width/2 + 130 && y > canvas.height/2 - 130 && y < canvas.height/2 + 130);
+			var temp = new Asteroid({x: x, y: y}, {x: getRandomNumber(-2, 2), y: getRandomNumber(-2, 2)}, getRandomNumber(25, 50), canvas);
+			var tempLoc = temp.getLocation(elapsedTime);
+			for(var j in asteroid){
+				var currentAsteroid = asteroid[j].getLocation(elapsedTime);
+				if(Math.pow(currentAsteroid.x - tempLoc.x, 2) + Math.pow(tempLoc.y - currentAsteroid.y, 2) <= Math.pow(tempLoc.radius + currentAsteroid.radius, 2)) cont = true;
+			}
+			count++;
+		}while(cont && count<50); //stops asteroids from spawing on top of each other
+		asteroid.push(temp);
+	}
+}
+
+function splitAsteroid(elapsedTime, aster){
+	var loc = aster.getLocation();
+	var vel = aster.getVelocity();
+	var massOne = getRandomNumber(15, vel.mass-15);
+	var velOneX = massOne/vel.mass * vel.x - getRandomNumber(-2,0);
+	var velOneY = massOne/vel.mass * vel.y + getRandomNumber(0,2);
+	asteroid.push(new Asteroid({x: loc.x-1, y: loc.y}, {x: velOneX, y: velOneY}, massOne, canvas));
+	asteroid.push(new Asteroid({x: loc.x, y: loc.y-1}, {x: vel.x - velOneX, y: vel.y - velOneY}, vel.mass - massOne, canvas));
+}
+
+function astroidCollisions(asteroidOne, asteroidTwo, direction){
+	//gets locations of asteroids and finds roation angle ****
+	var oneLoc = asteroidOne.getLocation();
+	var twoLoc = asteroidTwo.getLocation();
+	var angle = direction * Math.atan(Math.abs(oneLoc.y - twoLoc.y)/Math.abs(oneLoc.x - twoLoc.x));
+	//finds velocities of astroids ****
+	var oneVel = asteroidOne.getVelocity();
+	var twoVel = asteroidTwo.getVelocity();
+	//rotates those velocities ***
+	var oneNewX = oneVel.x*Math.cos(angle) - oneVel.y*Math.sin(angle);
+	var oneNewY = oneVel.x*Math.sin(angle) + oneVel.y*Math.cos(angle);
+	var twoNewX = twoVel.x*Math.cos(angle) - twoVel.y*Math.sin(angle);
+	var twoNewY = twoVel.x*Math.sin(angle) + twoVel.y*Math.cos(angle);
+	//uses rotated velocities to compute new velocities *****
+	var newOneVel = oneNewX*((oneVel.mass - twoVel.mass)/(oneVel.mass + twoVel.mass)) + twoNewX*((2*twoVel.mass)/(oneVel.mass + twoVel.mass));
+	var newTwoVel = twoNewX*((twoVel.mass - oneVel.mass)/(twoVel.mass + oneVel.mass)) + oneNewX*((2*oneVel.mass)/(twoVel.mass + oneVel.mass));
+	//Rotate back and create new astroid with correct velocities rotated ****
+	oneVel.x = newOneVel*Math.cos(-angle) - oneNewY*Math.sin(-angle);
+	oneVel.y = newOneVel*Math.sin(-angle) + oneNewY*Math.cos(-angle);
+	asteroidOne.setVelocity({x: oneVel.x, y: oneVel.y});
+	twoVel.x = newTwoVel*Math.cos(-angle) - twoNewY*Math.sin(-angle);
+	twoVel.y = newTwoVel*Math.sin(-angle) + twoNewY*Math.cos(-angle);
+	asteroidTwo.setVelocity({x: twoVel.x, y: twoVel.y});
+	//roates the positions
+	var oneNewXloc = oneLoc.x*Math.cos(angle) - oneLoc.y*Math.sin(angle);
+	var oneNewYloc = oneLoc.x*Math.sin(angle) + oneLoc.y*Math.cos(angle);
+	var twoNewXloc = twoLoc.x*Math.cos(angle) - twoLoc.y*Math.sin(angle);
+	var twoNewYloc = twoLoc.x*Math.sin(angle) + twoLoc.y*Math.cos(angle);
+	//uses rotates positions to change x positions
+	var overlap = Math.ceil(((oneLoc.radius + twoLoc.radius) - Math.abs(oneLoc.x - twoLoc.x))/8);
+	if(overlap > 0){
+		if(oneLoc.x > twoLoc.x){
+			oneNewXloc += overlap;
+			twoNewXloc -= overlap;
+		}
+		else{
+			oneNewXloc -= overlap;
+			twoNewXloc += overlap;
+		}
+	}
+	//roates the positions back and sets values in asteroid
+	oneLoc.x = oneNewXloc*Math.cos(-angle) - oneNewYloc*Math.sin(-angle);
+	oneLoc.y = oneNewXloc*Math.sin(-angle) + oneNewYloc*Math.cos(-angle);
+	twoLoc.x = twoNewXloc*Math.cos(-angle) - twoNewYloc*Math.sin(-angle);
+	twoLoc.y = twoNewXloc*Math.sin(-angle) + twoNewYloc*Math.cos(-angle);
+	asteroidOne.setPosition({x: oneLoc.x, y: oneLoc.y});
+	asteroidTwo.setPosition({x: twoLoc.x, y: twoLoc.y});
+	
+}
+},{"./asteroid.js":2,"./game.js":4,"./player.js":5}],2:[function(require,module,exports){
+"use strict";
+
+const MS_PER_FRAME = 1000/8;
+
+/**
+ * @module exports the Asteroid class
+ */
+module.exports = exports = Asteroid;
+
+/**
+ * @constructor Asteroid
+ * Creates a new Asteroid object
+ * @param {Postition} position object specifying an x and y
+ */
+function Asteroid(position, velocity, size, canvas) {
+  this.worldWidth = canvas.width;
+  this.worldHeight = canvas.height;
+  this.size = size;
+  this.gone = false;
+  this.position = {
+    x: position.x,
+    y: position.y
+  };
+  this.velocity = {
+    x: velocity.x,
+    y: velocity.y
+  }
+}
+
+
+
+/**
+ * @function updates the Asteroid object
+ * {DOMHighResTimeStamp} time the elapsed time since the last frame
+ */
+Asteroid.prototype.update = function(time) {
+  // Apply velocity
+  this.position.x += this.velocity.x;
+  this.position.y += this.velocity.y;
+  // Wrap around the screen
+  if(this.position.x < 0) this.position.x += this.worldWidth;
+  if(this.position.x > this.worldWidth) this.position.x -= this.worldWidth;
+  if(this.position.y < 0) this.position.y += this.worldHeight;
+  if(this.position.y > this.worldHeight) this.position.y -= this.worldHeight;
+}
+
+/**
+ * @function renders the Asteroid into the provided context
+ * {DOMHighResTimeStamp} time the elapsed time since the last frame
+ * {CanvasRenderingContext2D} ctx the context to render into
+ */
+Asteroid.prototype.render = function(time, ctx) {
+  // Draw Asteriod
+  ctx.save();
+  if(this.size < 30) ctx.strokeStyle = 'red';
+  else ctx.strokeStyle = 'orange';
+  ctx.beginPath();
+  ctx.arc(this.position.x, this.position.y, this.size, 0, 2 * Math.PI, false); //(x,y,radius, for circle = 0, for circle = 2* MAth.PI)
+  ctx.stroke();
+  ctx.restore();
+}
+
+Asteroid.prototype.getStatus = function(time) {
+  return this.gone;
+}
+
+Asteroid.prototype.getLocation = function(){
+	return {x: this.position.x, y:this.position.y, radius: this.size};
+}
+
+Asteroid.prototype.destory = function(time){
+	this.gone = true;
+}
+
+Asteroid.prototype.getVelocity = function(){
+	return {x: this.velocity.x, y:this.velocity.y, mass: this.size};
+}
+
+Asteroid.prototype.setVelocity = function(velocity){
+	this.velocity.x = velocity.x;
+	this.velocity.y = velocity.y;
+}
+
+Asteroid.prototype.setPosition = function(position){
+	this.position.x = position.x;
+	this.position.y = position.y;
+}
+},{}],3:[function(require,module,exports){
+"use strict";
+
+const MS_PER_FRAME = 1000/8;
+
+/**
+ * @module exports the Bullet class
+ */
+module.exports = exports = Bullet;
+
+/**
+ * @constructor Bullet
+ * Creates a new Bullet object
+ * @param {Postition} position object specifying an x and y
+ */
+function Bullet(position, angle, canvas) {
+  this.worldWidth = canvas.width;
+  this.worldHeight = canvas.height;
+  this.size = 3;
+  this.spd = 10;
+  this.offScreen = false;
+  this.position = {
+    x: position.x,
+    y: position.y
+  };
+  this.velocity = {
+    x: -this.spd * Math.sin(angle),
+    y: -this.spd * Math.cos(angle)
+  }
+}
+//var radians = dir*Math.PI/180.0;
+
+
+/**
+ * @function updates the Bullet object
+ * {DOMHighResTimeStamp} time the elapsed time since the last frame
+ */
+Bullet.prototype.update = function(time) {
+  // Apply velocity
+  this.position.x += this.velocity.x;
+  this.position.y += this.velocity.y;
+  if(this.position.x < 0 - this.size || this.position.x > this.worldWidth + this.size || this.position.y < 0 - this.size || this.position.y > this.worldHeight + this.size) this.offScreen = true;
+}
+
+/**
+ * @function renders the Bullet into the provided context
+ * {DOMHighResTimeStamp} time the elapsed time since the last frame
+ * {CanvasRenderingContext2D} ctx the context to render into
+ */
+Bullet.prototype.render = function(time, ctx) {
+  // Draw bullet
+  ctx.save();
+  ctx.strokeStyle = 'cyan';
+  ctx.beginPath();
+  ctx.arc(this.position.x, this.position.y, this.size, 0, 2 * Math.PI, false); //(x,y,radius, for circle = 0, for circle = 2* MAth.PI)
+  ctx.stroke();
+  ctx.restore();
+}
+
+Bullet.prototype.getStatus = function(time) {
+  return this.offScreen;
+}
+
+Bullet.prototype.getLocation = function(time){
+	return {x: this.position.x, y:this.position.y, radius: this.size}
+}
+
+Bullet.prototype.destory = function(time){
+	this.offScreen = true;
+}
+
+Bullet.prototype.getDestory = function(){
+	return this.offScreen;
+}
+},{}],4:[function(require,module,exports){
 "use strict";
 
 /**
@@ -106,10 +495,11 @@ Game.prototype.loop = function(newTime) {
   this.frontCtx.drawImage(this.backBuffer, 0, 0);
 }
 
-},{}],3:[function(require,module,exports){
+},{}],5:[function(require,module,exports){
 "use strict";
 
 const MS_PER_FRAME = 1000/8;
+const Bullet = require('./bullet.js');
 
 /**
  * @module exports the Player class
@@ -124,7 +514,9 @@ module.exports = exports = Player;
 function Player(position, canvas) {
   this.worldWidth = canvas.width;
   this.worldHeight = canvas.height;
-  this.state = "idle";
+  this.bullets = [];
+  this.start = false;
+  this.state = 'idle';
   this.position = {
     x: position.x,
     y: position.y
@@ -138,9 +530,12 @@ function Player(position, canvas) {
   this.thrusting = false;
   this.steerLeft = false;
   this.steerRight = false;
+  this.laser = new Audio();
+  this.laser.src = 'assets/laser.wav';
 
   var self = this;
   window.onkeydown = function(event) {
+	event.preventDefault();
     switch(event.key) {
       case 'ArrowUp': // up
       case 'w':
@@ -154,7 +549,17 @@ function Player(position, canvas) {
       case 'd':
         self.steerRight = true;
         break;
+	  case 'v':
+		var temp = new Bullet({x: self.position.x, y: self.position.y}, self.angle, canvas);
+		self.laser.play();
+		self.bullets.push(temp);
+		event.disableExternalCapture();
+		break;
+	  case 'b':
+		self.state = 'warp';
+		break;
     }
+	self.start = true;
   }
 
   window.onkeyup = function(event) {
@@ -181,7 +586,23 @@ function Player(position, canvas) {
  * @function updates the player object
  * {DOMHighResTimeStamp} time the elapsed time since the last frame
  */
-Player.prototype.update = function(time) {
+Player.prototype.update = function(time, asteroid, canvas) {
+  if(this.state == 'warp'){
+	  this.state = 'running';
+	  var position = {x: 0, y: 0};
+		do{
+			var cont = false;
+			position.x = getRandomNumber(0, canvas.width);
+			position.y = getRandomNumber(0, canvas.height);
+			for(var j in asteroid){
+				var currentAsteroid = asteroid[j].getLocation(0);
+				if(Math.pow(currentAsteroid.x - position.x, 2) + Math.pow(position.y - currentAsteroid.y, 2) <= Math.pow(25 + currentAsteroid.radius, 2)) cont = true;
+			}
+		}while(cont); //stops asteroids from spawing on top of each other
+		this.position.x = position.x;
+		this.position.y = position.y;
+  }
+  
   // Apply angular velocity
   if(this.steerLeft) {
     this.angle += time * 0.005;
@@ -206,6 +627,13 @@ Player.prototype.update = function(time) {
   if(this.position.x > this.worldWidth) this.position.x -= this.worldWidth;
   if(this.position.y < 0) this.position.y += this.worldHeight;
   if(this.position.y > this.worldHeight) this.position.y -= this.worldHeight;
+  
+  //update bullets
+  for (var i = this.bullets.length; i >0; i--) {
+	var temp = this.bullets.shift();
+	temp.update(time);
+	if(temp.getStatus(time) == false) this.bullets.push(temp);
+  }
 }
 
 /**
@@ -216,6 +644,11 @@ Player.prototype.update = function(time) {
 Player.prototype.render = function(time, ctx) {
   ctx.save();
 
+  //draw bullets
+  for (var i = 0; i < this.bullets.length; i++) {
+	this.bullets[i].render(time, ctx);
+  }
+  
   // Draw player's ship
   ctx.translate(this.position.x, this.position.y);
   ctx.rotate(-this.angle);
@@ -241,4 +674,19 @@ Player.prototype.render = function(time, ctx) {
   ctx.restore();
 }
 
-},{}]},{},[1]);
+Player.prototype.getBullets = function(time){
+	return this.bullets;
+}
+
+Player.prototype.hasStarted = function(time){
+	return this.start;
+}
+
+Player.prototype.getLocation = function(){
+	return {x: this.position.x, y:this.position.y, angle: this.angle};
+}
+
+function getRandomNumber(min, max) {
+    return Math.random() * (max - min) + min;
+}
+},{"./bullet.js":3}]},{},[1]);

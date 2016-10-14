@@ -1,6 +1,7 @@
 "use strict";
 
 const MS_PER_FRAME = 1000/8;
+const Bullet = require('./bullet.js');
 
 /**
  * @module exports the Player class
@@ -15,7 +16,9 @@ module.exports = exports = Player;
 function Player(position, canvas) {
   this.worldWidth = canvas.width;
   this.worldHeight = canvas.height;
-  this.state = "idle";
+  this.bullets = [];
+  this.start = false;
+  this.state = 'idle';
   this.position = {
     x: position.x,
     y: position.y
@@ -29,9 +32,12 @@ function Player(position, canvas) {
   this.thrusting = false;
   this.steerLeft = false;
   this.steerRight = false;
+  this.laser = new Audio();
+  this.laser.src = 'assets/laser.wav';
 
   var self = this;
   window.onkeydown = function(event) {
+	event.preventDefault();
     switch(event.key) {
       case 'ArrowUp': // up
       case 'w':
@@ -45,7 +51,16 @@ function Player(position, canvas) {
       case 'd':
         self.steerRight = true;
         break;
+	  case 'v':
+		var temp = new Bullet({x: self.position.x, y: self.position.y}, self.angle, canvas);
+		self.laser.play();
+		self.bullets.push(temp);
+		break;
+	  case 'b':
+		self.state = 'warp';
+		break;
     }
+	self.start = true;
   }
 
   window.onkeyup = function(event) {
@@ -72,7 +87,23 @@ function Player(position, canvas) {
  * @function updates the player object
  * {DOMHighResTimeStamp} time the elapsed time since the last frame
  */
-Player.prototype.update = function(time) {
+Player.prototype.update = function(time, asteroid, canvas) {
+  if(this.state == 'warp'){
+	  this.state = 'running';
+	  var position = {x: 0, y: 0};
+		do{
+			var cont = false;
+			position.x = getRandomNumber(0, canvas.width);
+			position.y = getRandomNumber(0, canvas.height);
+			for(var j in asteroid){
+				var currentAsteroid = asteroid[j].getLocation(0);
+				if(Math.pow(currentAsteroid.x - position.x, 2) + Math.pow(position.y - currentAsteroid.y, 2) <= Math.pow(25 + currentAsteroid.radius, 2)) cont = true;
+			}
+		}while(cont); //stops asteroids from spawing on top of each other
+		this.position.x = position.x;
+		this.position.y = position.y;
+  }
+  
   // Apply angular velocity
   if(this.steerLeft) {
     this.angle += time * 0.005;
@@ -97,6 +128,13 @@ Player.prototype.update = function(time) {
   if(this.position.x > this.worldWidth) this.position.x -= this.worldWidth;
   if(this.position.y < 0) this.position.y += this.worldHeight;
   if(this.position.y > this.worldHeight) this.position.y -= this.worldHeight;
+  
+  //update bullets
+  for (var i = this.bullets.length; i >0; i--) {
+	var temp = this.bullets.shift();
+	temp.update(time);
+	if(temp.getStatus(time) == false) this.bullets.push(temp);
+  }
 }
 
 /**
@@ -107,6 +145,11 @@ Player.prototype.update = function(time) {
 Player.prototype.render = function(time, ctx) {
   ctx.save();
 
+  //draw bullets
+  for (var i = 0; i < this.bullets.length; i++) {
+	this.bullets[i].render(time, ctx);
+  }
+  
   // Draw player's ship
   ctx.translate(this.position.x, this.position.y);
   ctx.rotate(-this.angle);
@@ -130,4 +173,20 @@ Player.prototype.render = function(time, ctx) {
     ctx.stroke();
   }
   ctx.restore();
+}
+
+Player.prototype.getBullets = function(time){
+	return this.bullets;
+}
+
+Player.prototype.hasStarted = function(time){
+	return this.start;
+}
+
+Player.prototype.getLocation = function(){
+	return {x: this.position.x, y:this.position.y, angle: this.angle};
+}
+
+function getRandomNumber(min, max) {
+    return Math.random() * (max - min) + min;
 }
