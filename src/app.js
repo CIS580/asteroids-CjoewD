@@ -1,5 +1,7 @@
 "use strict;"
 
+const MS_PER_FRAME = 1000;
+
 /* Classes */
 const Game = require('./game.js');
 const Player = require('./player.js');
@@ -14,12 +16,21 @@ var level = 1;
 var lives = 3;
 var score = 0;
 var state = 'start';
+var timer = 0;
 var explosion = new Audio();
 explosion.src = 'assets/explosion.wav';
-var bump = new Audio();
-bump.src = 'assets/bump.wav';
-var destory = new Audio();
-destory.src = 'assets/destory.wav';
+var bumpInt = 0;
+var bump = [new Audio(), new Audio(), new Audio(), new Audio(), new Audio()];
+bump[0].src = 'assets/bump.wav';
+bump[1].src = 'assets/bump.wav';
+bump[2].src = 'assets/bump.wav';
+bump[3].src = 'assets/bump.wav';
+bump[4].src = 'assets/bump.wav';
+var destoryInt = 0;
+var destory = [new Audio(), new Audio(), new Audio()];
+destory[0].src = 'assets/destory.wav';
+destory[1].src = 'assets/destory.wav';
+destory[2].src = 'assets/destory.wav';
 
 
 /**
@@ -56,14 +67,12 @@ function update(elapsedTime) {
 	  case 'running':
 	    //update player movement/ bullets
 		player.update(elapsedTime, asteroid, canvas);
-  
 	    //update astroids
 	    for (i = asteroid.length; i > 0; i--) {
 			var temp = asteroid.shift();
 			temp.update(elapsedTime);
 			if(temp.getStatus(elapsedTime) == false) asteroid.push(temp);
    	    }
-	  
 	    //check bullet-astroid collision
 		var bullets = player.getBullets(elapsedTime);
 		for(var i in bullets){
@@ -75,13 +84,14 @@ function update(elapsedTime) {
 					var size = asteroid[j].getVelocity();
 					if(size.mass > 30) splitAsteroid(elapsedTime, asteroid[j]);
 					asteroid[j].destory(elapsedTime);
-					destory.play();
+					destory[destoryInt].play();
+					destoryInt++;
+					if(destoryInt>2) destoryInt = 0;
 					bullets[i].destory(elapsedTime);
 					score += Math.ceil(size.mass);
 				}
 			}
 		}
-		
 		//check asteroid-asteroid collision
 		for(var i = 0; i< asteroid.length;i++){
 			var currentAsteroidOne = asteroid[i].getLocation(elapsedTime);
@@ -97,15 +107,93 @@ function update(elapsedTime) {
 						if(currentAsteroidOne.y > currentAsteroidTwo.y) astroidCollisions(asteroid[i], asteroid[j], -1);
 						else astroidCollisions(asteroid[i], asteroid[j], 1);
 					}
-					bump.play();
+					bump[bumpInt].play();
+					bumpInt++;
+					if(bumpInt>4) bumpInt = 0;
 				}
 			}
 		}
-		
 		//check for win
 		if(asteroid.length == 0) state = 'win';
-		
-		
+		//check player-asteroid collision
+		var playerLoc = player.getLocation();
+		for(var i = 0; i< asteroid.length;i++){
+			var currentAsteroidOne = asteroid[i].getLocation(elapsedTime);
+			//(x2-x1)^2 + (y1-y2)^2 <= (r1+r2)^2 is the formula used to check for collisions
+			if(Math.pow(playerLoc.x - currentAsteroidOne.x, 2) + Math.pow(currentAsteroidOne.y - playerLoc.y, 2) <= Math.pow(currentAsteroidOne.radius + 10, 2)){
+				state = 'phase';
+				player.resetLocation(canvas);
+				lives--;
+				explosion.play();
+				player = new Player({x: canvas.width/2, y: canvas.height/2}, canvas);
+				if(lives <= 0){
+					console.log('test');
+					game = new Game(canvas, update, render);
+					asteroid = [];
+					level = 1;
+					lives = 3;
+					score = 0;
+					state = 'start';
+				}
+			}
+		}
+		break;
+	  case 'phase':
+	    timer += elapsedTime;
+		if (timer > MS_PER_FRAME * 4) {
+			timer = 0;
+			state = 'running';
+		}
+	    //update player movement/ bullets
+		player.update(elapsedTime, asteroid, canvas);
+	    //update astroids
+	    for (i = asteroid.length; i > 0; i--) {
+			var temp = asteroid.shift();
+			temp.update(elapsedTime);
+			if(temp.getStatus(elapsedTime) == false) asteroid.push(temp);
+   	    }
+	    //check bullet-astroid collision
+		var bullets = player.getBullets(elapsedTime);
+		for(var i in bullets){
+			var currentBullet = bullets[i].getLocation(elapsedTime);
+			for(var j in asteroid){
+				var currentAsteroid = asteroid[j].getLocation();
+				//(x2-x1)^2 + (y1-y2)^2 <= (r1+r2)^2 is the formula used to check for collisions
+				if(Math.pow(currentAsteroid.x - currentBullet.x, 2) + Math.pow(currentBullet.y - currentAsteroid.y, 2) <= Math.pow(currentBullet.radius + currentAsteroid.radius, 2) && !bullets[i].getDestory(elapsedTime)){
+					var size = asteroid[j].getVelocity();
+					if(size.mass > 30) splitAsteroid(elapsedTime, asteroid[j]);
+					asteroid[j].destory(elapsedTime);
+					destory[destoryInt].play();
+					destoryInt++;
+					if(destoryInt>2) destoryInt = 0;
+					bullets[i].destory(elapsedTime);
+					score += Math.ceil(size.mass);
+				}
+			}
+		}
+		//check asteroid-asteroid collision
+		for(var i = 0; i< asteroid.length;i++){
+			var currentAsteroidOne = asteroid[i].getLocation(elapsedTime);
+			for(var j = i; j<asteroid.length;j++){
+				var currentAsteroidTwo = asteroid[j].getLocation();
+				//(x2-x1)^2 + (y1-y2)^2 <= (r1+r2)^2 is the formula used to check for collisions
+				if(i != j && Math.pow(currentAsteroidTwo.x - currentAsteroidOne.x, 2) + Math.pow(currentAsteroidOne.y - currentAsteroidTwo.y, 2) <= Math.pow(currentAsteroidOne.radius + currentAsteroidTwo.radius, 2)){
+					if(currentAsteroidOne.x < currentAsteroidTwo.x){
+						if(currentAsteroidOne.y > currentAsteroidTwo.y) astroidCollisions(asteroid[i], asteroid[j], 1);
+						else astroidCollisions(asteroid[i], asteroid[j],-1);
+					}
+					else{
+						if(currentAsteroidOne.y > currentAsteroidTwo.y) astroidCollisions(asteroid[i], asteroid[j], -1);
+						else astroidCollisions(asteroid[i], asteroid[j], 1);
+					}
+					bump[bumpInt].play();
+					bumpInt++;
+					if(bumpInt>4) bumpInt = 0;
+				}
+			}
+		}
+		//check for win
+		if(asteroid.length == 0) state = 'win';
 		break;
 	  case 'win':
 		player = new Player({x: canvas.width/2, y: canvas.height/2}, canvas);
@@ -160,7 +248,7 @@ function render(elapsedTime, ctx) {
 	  ctx.lineTo(95+(i*25), 475);
 	  ctx.closePath();
 	  ctx.stroke();
-  }
+  }  
   //draws state specific ui
   switch(state){
 	  case 'idle':
@@ -203,7 +291,7 @@ function createAstroids(elapsedTime){
 				x = getRandomNumber(0, canvas.width);
 				y = getRandomNumber(0, canvas.height);
 			}while(x > canvas.width/2 - 130 && x < canvas.width/2 + 130 && y > canvas.height/2 - 130 && y < canvas.height/2 + 130);
-			var temp = new Asteroid({x: x, y: y}, {x: getRandomNumber(-2, 2), y: getRandomNumber(-2, 2)}, getRandomNumber(25, 50), canvas);
+			var temp = new Asteroid({x: x, y: y}, {x: getRandomNumber(-2, 2), y: getRandomNumber(-2, 2)}, getRandomNumber(25, 40), canvas);
 			var tempLoc = temp.getLocation(elapsedTime);
 			for(var j in asteroid){
 				var currentAsteroid = asteroid[j].getLocation(elapsedTime);

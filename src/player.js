@@ -32,8 +32,20 @@ function Player(position, canvas) {
   this.thrusting = false;
   this.steerLeft = false;
   this.steerRight = false;
-  this.laser = new Audio();
-  this.laser.src = 'assets/laser.wav';
+  this.bulletShoot = true;
+  this.warpNow = true;
+  this.soundSlot = 0;
+  this.laser = [new Audio(), new Audio(), new Audio(), new Audio(), new Audio(), new Audio(), new Audio(), new Audio(), new Audio(), new Audio()];
+  this.laser[0].src = 'assets/laser.wav';
+  this.laser[1].src = 'assets/laser.wav';
+  this.laser[2].src = 'assets/laser.wav';
+  this.laser[3].src = 'assets/laser.wav';
+  this.laser[4].src = 'assets/laser.wav';
+  this.laser[5].src = 'assets/laser.wav';
+  this.laser[6].src = 'assets/laser.wav';
+  this.laser[7].src = 'assets/laser.wav';
+  this.laser[8].src = 'assets/laser.wav';
+  this.laser[9].src = 'assets/laser.wav';
 
   var self = this;
   window.onkeydown = function(event) {
@@ -52,12 +64,20 @@ function Player(position, canvas) {
         self.steerRight = true;
         break;
 	  case 'v':
-		var temp = new Bullet({x: self.position.x, y: self.position.y}, self.angle, canvas);
-		self.laser.play();
-		self.bullets.push(temp);
+		if(self.bulletShoot){
+			var temp = new Bullet({x: self.position.x, y: self.position.y}, self.angle, canvas);
+			self.laser[self.soundSlot].play();
+			self.soundSlot++;
+			if(self.soundSlot>9) self.soundSlot = 0;
+			self.bullets.push(temp);
+			self.bulletShoot = false;
+		}
 		break;
 	  case 'b':
-		self.state = 'warp';
+		if(self.warpNow){
+			self.state = 'warp';
+			self.warpNow = false;
+		}
 		break;
     }
 	self.start = true;
@@ -76,6 +96,12 @@ function Player(position, canvas) {
       case 'ArrowRight': // right
       case 'd':
         self.steerRight = false;
+        break;
+	  case 'v':
+        self.bulletShoot = true;
+        break;
+	  case 'b':
+        self.warpNow = true;
         break;
     }
   }
@@ -185,6 +211,12 @@ Player.prototype.hasStarted = function(time){
 
 Player.prototype.getLocation = function(){
 	return {x: this.position.x, y:this.position.y, angle: this.angle};
+}
+
+Player.prototype.resetLocation = function(canvas){
+	this.x =canvas.width/2;
+	this.y = canvas.height/2;
+	this.angle = 0;
 }
 
 function getRandomNumber(min, max) {
